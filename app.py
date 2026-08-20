@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
-import joblib
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 
 st.set_page_config(page_title="Loan Approval Predictor", page_icon="🏦", layout="wide")
 
@@ -8,10 +12,43 @@ st.title("🏦 Automated Loan Approval Predictor")
 st.write("Enter applicant details to evaluate loan risk instantly.")
 
 @st.cache_resource
-def load_model():
-    return joblib.load('loan_model.pkl')
+def train_and_get_model():
+    # Load dataset directly from repo
+    df = pd.read_csv('loan_approval_dataset.csv')
+    
+    # Clean whitespace in columns and categorical strings
+    df.columns = df.columns.str.strip()
+    for col in ['education', 'self_employed', 'loan_status']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
 
-pipeline = load_model()
+    X = df.drop(columns=['loan_id', 'loan_status'])
+    y = df['loan_status'].map({'Approved': 1, 'Rejected': 0})
+
+    num_features = [
+        'no_of_dependents', 'income_annum', 'loan_amount', 'loan_term',
+        'cibil_score', 'residential_assets_value', 'commercial_assets_value',
+        'luxury_assets_value', 'bank_asset_value'
+    ]
+    cat_features = ['education', 'self_employed']
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', StandardScaler(), num_features),
+            ('cat', OneHotEncoder(handle_unknown='ignore'), cat_features)
+        ]
+    )
+
+    pipeline = Pipeline([
+        ('preprocessor', preprocessor),
+        ('classifier', RandomForestClassifier(n_estimators=100, random_state=42))
+    ])
+
+    pipeline.fit(X, y)
+    return pipeline
+
+# Train/load model once in memory
+pipeline = train_and_get_model()
 
 with st.form("loan_application_form"):
     st.subheader("1. Applicant Profile")
