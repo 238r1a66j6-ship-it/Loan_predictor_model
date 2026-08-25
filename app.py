@@ -1,54 +1,22 @@
 import streamlit as st
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
+import joblib
 
 st.set_page_config(page_title="Loan Approval Predictor", page_icon="🏦", layout="wide")
 
 st.title("🏦 Automated Loan Approval Predictor")
 st.write("Enter applicant details to evaluate loan risk instantly.")
 
+# Load the pre-trained .pkl file directly
 @st.cache_resource
-def train_and_get_model():
-    # Load dataset directly from repo
-    df = pd.read_csv('loan_approval_dataset.csv')
-    
-    # Clean whitespace in columns and categorical strings
-    df.columns = df.columns.str.strip()
-    for col in ['education', 'self_employed', 'loan_status']:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
+def load_model():
+    return joblib.load('loan_model.pkl')
 
-    X = df.drop(columns=['loan_id', 'loan_status'])
-    y = df['loan_status'].map({'Approved': 1, 'Rejected': 0})
-
-    num_features = [
-        'no_of_dependents', 'income_annum', 'loan_amount', 'loan_term',
-        'cibil_score', 'residential_assets_value', 'commercial_assets_value',
-        'luxury_assets_value', 'bank_asset_value'
-    ]
-    cat_features = ['education', 'self_employed']
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', StandardScaler(), num_features),
-            ('cat', OneHotEncoder(handle_unknown='ignore'), cat_features)
-        ]
-    )
-
-    pipeline = Pipeline([
-        ('preprocessor', preprocessor),
-        ('classifier', RandomForestClassifier(n_estimators=100, random_state=42))
-    ])
-
-    pipeline.fit(X, y)
-    return pipeline
-
-# Train/load model once in memory
-pipeline = train_and_get_model()
+try:
+    pipeline = load_model()
+except Exception as e:
+    st.error(f"Error loading model artifact 'loan_model.pkl': {e}")
+    st.stop()
 
 with st.form("loan_application_form"):
     st.subheader("1. Applicant Profile")
@@ -101,7 +69,16 @@ if submit:
 
     prediction = pipeline.predict(input_data)[0]
     probabilities = pipeline.predict_proba(input_data)[0]
-    approval_prob = probabilities[1] * 100
+    
+    classes = list(pipeline.classes_)
+    if 'Approved' in classes:
+        approved_idx = classes.index('Approved')
+    elif 1 in classes:
+        approved_idx = classes.index(1)
+    else:
+        approved_idx = 1
+
+    approval_prob = probabilities[approved_idx] * 100
 
     st.divider()
     m1, m2 = st.columns(2)
@@ -110,7 +87,7 @@ if submit:
     total_assets = residential_assets_value + commercial_assets_value + luxury_assets_value + bank_asset_value
     m2.metric("Total Asset Backing", f"₹{total_assets:,.0f}")
 
-    if prediction == 1:
+    if prediction in [1, 'Approved']:
         st.success(f"🎉 **Application Approved!** (Confidence: {approval_prob:.1f}%)")
     else:
         st.error(f"❌ **Application Rejected!** (Approval Probability: {approval_prob:.1f}%)")
